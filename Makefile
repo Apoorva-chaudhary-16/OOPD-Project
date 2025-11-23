@@ -1,57 +1,80 @@
-# Makefile for Cellular Network Simulator (With C++ Threads)
+# ======================================================
+#   Makefile for Cellular Network Simulator (C++11)
+# ======================================================
 
-# Compilers
 CXX = g++
-AS = nasm
-LD = g++  # <-- Use g++ as the linker to link libstdc++
+AS  = nasm
+LD  = g++
 
-# Flags
-# -c = Compile, don't link
-# -g = Add debug symbols
-# -Wall = All warnings
-# -m64 = 64-bit
-# -O0 = No optimization
-# -I. = Look in current directory for includes (basicIO.h)
-# We REMOVED: -fno-use-cxa-atexit, -nostdinc++
-# We ADDED: -std=c++11 (required for <thread>)
 CXXFLAGS = -c -g -Wall -m64 -O0 -std=c++11 -I.
+ASFLAGS  = -f elf64 -g
+LDFLAGS  = -g
 
-# -f elf64 = 64-bit ELF object file format
-ASFLAGS = -f elf64 -g
+# ======================================================
+#   SOURCE FILES
+# ======================================================
 
-# -lpthread = Link the POSIX Threads library
-# We REMOVED: -nostdlib
-LDFLAGS = -g -lpthread
+SRCS = \
+    main.cpp \
+    basicIO.cpp \
+    Simulator.cpp \
+    CellularCore.cpp \
+    CellTower.cpp \
+    UserDevice.cpp \
+    \
+    technologies/Tower2G.cpp \
+    technologies/Core2G.cpp \
+    technologies/Device2G.cpp \
+    \
+    technologies/Tower3G.cpp \
+    technologies/Core3G.cpp \
+    technologies/Device3G.cpp \
+    \
+    technologies/Tower4G.cpp \
+    technologies/Core4G.cpp \
+    technologies/Device4G.cpp \
+    \
+    technologies/Tower5G.cpp \
+    technologies/Core5G.cpp \
+    technologies/Device5G.cpp
 
-# Object files to build
-OBJS = main.o basicIO.o syscall.o
+OBJS = $(SRCS:.cpp=.o) syscall.o
 
-# The final executable name
 TARGET = simulator
+
+# ======================================================
+#   DEFAULT BUILD TARGET
+# ======================================================
 
 all: $(TARGET)
 
-# Rule to link the final executable
+# ======================================================
+#   LINKING
+# ======================================================
+
 $(TARGET): $(OBJS)
 	$(LD) $(LDFLAGS) -o $(TARGET) $(OBJS)
 
-# Rule to compile main.cpp
-main.o: main.cpp basicIO.h
-	$(CXX) $(CXXFLAGS) -o main.o main.cpp
+# ======================================================
+#   COMPILATION RULES
+# ======================================================
 
-# Rule to compile basicIO.cpp
-# Note: basicIO.cpp now also needs -std=c++11 so it can be linked
-basicIO.o: basicIO.cpp basicIO.h
-	$(CXX) $(CXXFLAGS) -o basicIO.o basicIO.cpp
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -o $@ $<
 
-# Rule to assemble syscall.S
 syscall.o: syscall.S
 	$(AS) $(ASFLAGS) -o syscall.o syscall.S
 
-# Rule to clean up build files
+# ======================================================
+#   CLEAN BUILD FILES
+# ======================================================
+
 clean:
 	rm -f $(TARGET) $(OBJS)
 
-# Rule to build and run
+# ======================================================
+#   RUN PROGRAM
+# ======================================================
+
 run: all
 	./$(TARGET)
