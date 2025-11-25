@@ -1,1 +1,1 @@
-#include "technologies/Core2G.h"
+#include "Core2G.h"

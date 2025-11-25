@@ -1,19 +1,8 @@
 #pragma once
-#include "UserDevice.h"
-
-/**
- * Device3G
- * --------
- * 3G device generates:
- *   - 10 messages (both voice + data use packet switching)
- */
+#include "../UserDevice.h"
 
 class Device3G : public UserDevice {
 public:
-    Device3G(int id = 0)
-        : UserDevice(id, "3G") {}
-
-    virtual int getMessageCount() const override {
-        return 10;
-    }
+    Device3G(int id = 0) : UserDevice(id, "3G") {}
+    virtual int getMessageCount() const override { return 10; }
 };
