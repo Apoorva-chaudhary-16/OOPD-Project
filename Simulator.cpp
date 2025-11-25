@@ -115,9 +115,6 @@ static int assign_users_to_channels(int channels, int capPerChannel,
             reduce -= take;
             totalAssigned -= take;
         }
-        if (reduce == 0) {
-            // Now exactly equal, no unassigned from this step
-        }
         unassigned = 0;
     }
 
@@ -164,47 +161,75 @@ void Simulator::run() {
             long bytes = read_file_to_buffer(filename, filebuf, MAX_FILE_BYTES);
             if (bytes <= 0) {
                 delete tower;
-                throw ERROR_INVALID_INPUT;
+                throw ERROR_INVALID_INPUT;  // bad/missing file
             }
 
             static int ints[MAX_INTS];
             int intCount = parse_ints_from_buffer(filebuf, ints, MAX_INTS);
-            if (intCount <= 0) {
+            if (intCount < 2) {
+                delete tower;
+                throw ERROR_INVALID_INPUT;  // need TOTAL_USERS + at least one channel
+            }
+
+            int totalUsersFromFile = ints[0];
+            if (totalUsersFromFile <= 0) {
+                delete tower;
+                throw ERROR_INVALID_INPUT;  // total users must be positive
+            }
+
+            io.outputstring("\nEnter core overhead percentage (0-100): ");
+            int overheadPercent = io.inputint();
+            // strict: if invalid, throw error instead of clamping
+            if (overheadPercent < 0 || overheadPercent > 100) {
                 delete tower;
                 throw ERROR_INVALID_INPUT;
             }
 
-            int totalUsersFromFile = ints[0];
-
-            static int requestedArr[1024];
-            int perChannelCount = intCount - 1;
-            int i;
-            for (i = 0; i < perChannelCount && i < 1024; ++i) requestedArr[i] = ints[i + 1];
-
-            io.outputstring("\nEnter core overhead percentage (0-100): ");
-            int overheadPercent = io.inputint();
-            if (overheadPercent < 0) overheadPercent = 0;
-            if (overheadPercent > 100) overheadPercent = 100;
-
             io.outputstring("Enter maximum messages that ONE core can handle: ");
             int coreCapacity = io.inputint();
-            if (coreCapacity <= 0) coreCapacity = 1;
+            if (coreCapacity <= 0) {
+                delete tower;
+                throw ERROR_CORE_LIMIT;
+            }
 
-            long channels = tower->numChannels();
+            long channelsLong = tower->numChannels();
+            int channels = (int)channelsLong;
             int usersPerChannel = tower->getUsersPerChannel();
             int antennas = tower->getAntennas();
             int messagesPerUser = tower->getMessagesPerUser();
             int capPerChannel = usersPerChannel * antennas;
-            long wirelessLimit = channels * (long)capPerChannel;
+            long wirelessLimit = channelsLong * (long)capPerChannel;
 
-            int assignedArrCount = (int)channels;
-            int* assigned = new int[assignedArrCount];
-            int unassigned = 0;
+            int perChannelCount = intCount - 1;
+            if (perChannelCount < channels) {
+                delete tower;
+                throw ERROR_INVALID_INPUT;  // missing per-channel entries
+            }
 
+            // copy per-channel requested values with validation
+            static int requestedArr[1024];
             int reqCount = perChannelCount;
             if (reqCount > 1024) reqCount = 1024;
 
-            int totalAssigned = assign_users_to_channels((int)channels, capPerChannel,
+            int i;
+            for (i = 0; i < reqCount; ++i) {
+                int val = ints[i + 1];
+                if (val < 0) {
+                    delete tower;
+                    throw ERROR_INVALID_INPUT;  // negative users NOT allowed
+                }
+                if (val > capPerChannel) {
+                    delete tower;
+                    throw ERROR_OVER_CAPACITY; // requested more than per-channel capacity
+                }
+                requestedArr[i] = val;
+            }
+
+            int assignedArrCount = channels;
+            int* assigned = new int[assignedArrCount];
+            int unassigned = 0;
+
+            int totalAssigned = assign_users_to_channels(channels, capPerChannel,
                                                          totalUsersFromFile,
                                                          requestedArr, reqCount,
                                                          assigned, &unassigned);
@@ -236,7 +261,7 @@ void Simulator::run() {
             io.outputint((int)neededCores);
             io.outputstring("\n");
 
-            // --- EXTRA: for 4G and 5G, cores for FULL potential ---
+            // --- Extra: Full potential cores for 4G/5G ---
             int is4G = (tower->getChannelWidthKhz() == 10 && tower->getTotalSpectrumKhz() == 1000);
             int is5G = (tower->getChannelWidthKhz() == 1000 && tower->getTotalSpectrumKhz() == 10000);
 
@@ -256,7 +281,7 @@ void Simulator::run() {
             }
 
             io.outputstring("\n=== Channel Allocations ===\n");
-            for (i = 0; i < (int)channels; ++i) {
+            for (i = 0; i < channels; ++i) {
                 io.outputstring("Channel ");
                 io.outputint(i);
                 io.outputstring(": ");
@@ -273,21 +298,14 @@ void Simulator::run() {
             io.outputint(assigned[0]);
             io.outputstring("\n");
 
-            // User IDs: assume users are labeled 1000.. and assigned sequentially by channel
+            // User IDs in channel 0: assume users labeled from 1000 upward, sequential by assignment order
+            io.outputstring("User IDs in channel 0:\n");
             int startId = 1000;
-            // Compute starting ID of channel 0 (this is 1000)
-            // If we later want another channel N, we'd add sum(assigned[0..N-1]).
-            io.outputstring("User IDs in channel 0: ");
-            if (assigned[0] <= 0) {
-                io.outputstring("None\n");
-            } else {
+            int uid;
+            for (uid = 0; uid < assigned[0]; ++uid) {
+                io.outputstring("  User ");
+                io.outputint(startId + uid);
                 io.outputstring("\n");
-                int uid;
-                for (uid = 0; uid < assigned[0]; ++uid) {
-                    io.outputstring("  User ");
-                    io.outputint(startId + uid);
-                    io.outputstring("\n");
-                }
             }
 
             io.outputstring("\n--- Message Statistics ---\n");
@@ -313,14 +331,15 @@ void Simulator::run() {
         }
         catch (int err) {
             if (err == ERROR_INVALID_INPUT) {
-                io.errorstring("Error: Invalid input or file format.\n");
+                io.errorstring("Error: Invalid input (menu choice, file, or value).\n");
             } else if (err == ERROR_OVER_CAPACITY) {
-                io.errorstring("Error: User count exceeds allowed capacity.\n");
+                io.errorstring("Error: Requested users exceed per-channel capacity.\n");
             } else if (err == ERROR_CORE_LIMIT) {
-                io.errorstring("Error: Core capacity limit violated.\n");
+                io.errorstring("Error: Invalid or zero core capacity.\n");
             } else {
                 io.errorstring("Unknown error occurred.\n");
             }
+
             io.outputstring("\nSimulation aborted. Press 1 to try again, 0 to exit: ");
             runAgain = io.inputint();
             if (runAgain != 1) runAgain = 0;
